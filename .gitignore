@@ -5,15 +5,10 @@ dist/
 .venv/
 venv/
 __pycache__/
-*.pyc
 .env
 .env.local
 .env.production
 !.env.example
 !.env*.example
-.DS_Store
-Thumbs.db
 *.log
-coverage/
-*.sqlite
-*.db
+.DS_Store
