@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RasterKit - Geo / Raster Converter</title>
+  <meta name="description" content="Convert polygons and satellite rasters into zonal index tables: NDVI, NDWI, EVI and custom band math.">
+  <meta name="theme-color" content="#09090b">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2309090b'/%3E%3Cg fill='%232de2d0'%3E%3Crect x='6' y='6' width='6' height='6' rx='1.2' opacity='.3'/%3E%3Crect x='13' y='6' width='6' height='6' rx='1.2' opacity='.55'/%3E%3Crect x='20' y='6' width='6' height='6' rx='1.2'/%3E%3Crect x='6' y='13' width='6' height='6' rx='1.2' opacity='.55'/%3E%3Crect x='13' y='13' width='6' height='6' rx='1.2'/%3E%3Crect x='20' y='13' width='6' height='6' rx='1.2' opacity='.55'/%3E%3Crect x='6' y='20' width='6' height='6' rx='1.2'/%3E%3Crect x='13' y='20' width='6' height='6' rx='1.2' opacity='.55'/%3E%3Crect x='20' y='20' width='6' height='6' rx='1.2' opacity='.3'/%3E%3C/g%3E%3C/svg%3E">
+  <script>
+    // Dark is the default. Only an explicit saved choice overrides it (no flash on first paint).
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem("rasterkit-theme"); } catch (e) {}
+      document.documentElement.setAttribute("data-theme", t === "light" ? "light" : "dark");
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 28 28" aria-hidden="true">
+        <rect class="m-frame" x=".5" y=".5" width="27" height="27" rx="7.5"/>
+        <g class="m-cells">
+          <rect x="5"    y="5"    width="5.2" height="5.2" rx="1.1" opacity=".28"/>
+          <rect x="11.4" y="5"    width="5.2" height="5.2" rx="1.1" opacity=".55"/>
+          <rect x="17.8" y="5"    width="5.2" height="5.2" rx="1.1"/>
+          <rect x="5"    y="11.4" width="5.2" height="5.2" rx="1.1" opacity=".55"/>
+          <rect x="11.4" y="11.4" width="5.2" height="5.2" rx="1.1"/>
+          <rect x="17.8" y="11.4" width="5.2" height="5.2" rx="1.1" opacity=".55"/>
+          <rect x="5"    y="17.8" width="5.2" height="5.2" rx="1.1"/>
+          <rect x="11.4" y="17.8" width="5.2" height="5.2" rx="1.1" opacity=".55"/>
+          <rect x="17.8" y="17.8" width="5.2" height="5.2" rx="1.1" opacity=".28"/>
+        </g>
+      </svg>
+      <h1>Raster<span>Kit</span></h1>
+      <span class="tag">Geo / raster converter</span>
+    </div>
+    <div class="top-actions">
+      <span id="modeBadge" class="badge" title="Data source"><span class="dot"></span><span id="modeText">-</span></span>
+      <button id="themeBtn" class="icon-btn" type="button" title="Toggle dark / light theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- ================= converter panel ================= -->
+    <aside class="panel" aria-label="Converter panel">
+      <form id="jobForm" class="panel-scroll" autocomplete="off" novalidate>
+        <div class="section">
+          <h2><span class="step">01</span> Input geometry</h2>
+          <label class="dropzone" id="dropzone">
+            <input id="fileInput" type="file" accept=".geojson,.json,.zip,application/geo+json,application/json,application/zip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4m0 0L8 8m4-4 4 4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+            <b>Drop GeoJSON / ZIP or browse</b>
+            <span>Many fields OK &middot; ZIP of .geojson files &middot; EPSG:4326</span>
+          </label>
+          <div class="btn-row">
+            <button type="button" id="demoGeoBtn" class="btn small">Load demo polygons</button>
+            <button type="button" id="clearGeoBtn" class="btn small ghost">Clear</button>
+          </div>
+          <div id="geoInfo" class="geo-info">No geometry loaded.</div>
+        </div>
+
+        <div class="section">
+          <h2><span class="step">02</span> Index formula</h2>
+          <label class="field">
+            <span>Index</span>
+            <select id="indexSelect"></select>
+          </label>
+          <label class="field">
+            <span>Expression <small id="exprHint" class="hint"></small></span>
+            <input id="formulaInput" class="mono" type="text" spellcheck="false" maxlength="200" readonly>
+            <div class="hint">Bands <code>B02 B03 B04 B05 B06 B07 B08 B8A B11 B12</code> &middot; ops <code>+ - * / ** ( )</code> &middot; <code>sqrt() abs() log() exp()</code></div>
+          </label>
+        </div>
+
+        <div class="section">
+          <h2><span class="step">03</span> Scene search</h2>
+          <div class="row">
+            <label class="field"><span>Start date</span><input id="startDate" type="date"></label>
+            <label class="field"><span>End date</span><input id="endDate" type="date"></label>
+          </div>
+          <label class="field">
+            <span>Max cloud cover</span>
+            <div class="range-row">
+              <input id="cloudRange" type="range" min="0" max="100" step="1" value="40">
+              <output id="cloudOut">40%</output>
+            </div>
+          </label>
+          <label class="field">
+            <span>STAC collection</span>
+            <input id="collectionInput" class="mono" type="text" spellcheck="false" placeholder="sentinel-2-l2a">
+            <div class="hint">Microsoft Planetary Computer. No API key required for public data.</div>
+          </label>
+        </div>
+
+        <div class="section">
+          <h2><span class="step">04</span> Output</h2>
+          <div class="checks" id="outputs">
+            <label class="check"><input type="checkbox" name="outputs" value="csv" checked> CSV</label>
+            <label class="check"><input type="checkbox" name="outputs" value="sqlite"> SQLite</label>
+            <label class="check"><input type="checkbox" name="outputs" value="png"> Preview PNG</label>
+          </div>
+          <div class="hint">PNG previews also appear as a raster overlay on the map.</div>
+        </div>
+
+        <div class="section">
+          <h2><span class="step">05</span> Data source</h2>
+          <label class="switch">
+            <input id="demoToggle" type="checkbox" checked>
+            <span><b>Demo mode</b><small id="demoHint">Synthetic scenes and rasters. Works fully offline.</small></span>
+          </label>
+          <label class="switch" id="fallbackRow" style="margin-top:12px">
+            <input id="fallbackToggle" type="checkbox" checked>
+            <span><b>Fall back to demo data</b><small>If the STAC service is unreachable, results are marked synthetic.</small></span>
+          </label>
+        </div>
+      </form>
+      <div class="panel-footer">
+        <div id="banner" class="banner" role="alert"></div>
+        <button id="runBtn" class="btn primary" type="submit" form="jobForm">Run job</button>
+      </div>
+    </aside>
+
+    <!-- ================= workspace ================= -->
+    <section class="workspace">
+      <div class="card map-card">
+        <div class="map-bar">
+          <span class="map-title">Map</span>
+          <span class="crs">EPSG:4326</span>
+          <span id="mapCoords" class="coords" aria-live="off">lat &ndash; &nbsp; lon &ndash;</span>
+          <span class="spacer"></span>
+          <div id="mapToolbar" class="map-toolbar">
+            <label>Scene
+              <select id="sceneSelect"></select>
+            </label>
+            <label id="opacityWrap">Overlay
+              <input id="opacityRange" type="range" min="0" max="100" value="80">
+            </label>
+          </div>
+        </div>
+        <div class="map-stage">
+          <div id="map"></div>
+          <div id="mapEmpty" class="map-empty"><div>Load a GeoJSON or the demo polygons to preview them here.</div></div>
+          <div id="legend" class="legend">
+            <div id="legendTitle">Index</div>
+            <div class="bar"></div>
+            <div class="ticks"><span id="legMin">0</span><span id="legMax">1</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card results-card">
+        <div class="tabs-head" role="tablist">
+          <button class="tab active" role="tab" data-tab="results">Results <span id="rowCount" class="count">0</span></button>
+          <button class="tab" role="tab" data-tab="chart">Time series</button>
+          <button class="tab" role="tab" data-tab="log">Job log</button>
+          <span class="tabs-spacer"></span>
+          <div class="status">
+            <div id="progress" class="progress"><i></i></div>
+            <span id="statusChip" class="chip">idle</span>
+            <button id="dlCsv" class="btn small" type="button" disabled>CSV</button>
+            <button id="dlSqlite" class="btn small" type="button" disabled>SQLite</button>
+            <button id="dlPng" class="btn small" type="button" disabled>PNG</button>
+          </div>
+        </div>
+        <div class="tab-body">
+          <div class="tab-pane active" id="pane-results">
+            <div id="syntheticNote" class="synthetic-note">These results are synthetic (demo data) and do not represent real observations.</div>
+            <div class="results-bar">
+              <label>Field
+                <select id="fieldFilter"><option value="">All fields</option></select>
+              </label>
+              <div class="stats" id="stats"></div>
+              <span class="spacer"></span>
+            </div>
+            <div class="table-wrap" id="tableWrap"><div class="empty">Run a job to see zonal statistics per polygon and scene.</div></div>
+          </div>
+          <div class="tab-pane" id="pane-chart">
+            <div id="chart"><div class="empty">Run a job to plot the mean index over time.</div></div>
+            <div id="chartLegend" class="chart-legend"></div>
+          </div>
+          <div class="tab-pane" id="pane-log">
+            <pre id="log"><span class="dim">Waiting for a job...</span></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

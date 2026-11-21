@@ -1,0 +1,8 @@
+# Extras for live Sentinel-2 processing via Microsoft Planetary Computer.
+# Install on top of the core requirements:  pip install -r requirements-live.txt
+-r requirements.txt
+rasterio>=1.3
+pystac-client>=0.8
+planetary-computer>=1.0
+requests>=2.31
+pyproj>=3.6
